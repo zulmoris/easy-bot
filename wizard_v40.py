@@ -210,7 +210,7 @@ class Wizard(ctk.CTk):
         self.btn_back.configure(state="normal" if idx > 0 else "disabled")
         title = "Выбор режима" if idx == -1 else f"Шаг {idx+1} из {len(STEPS)} — {STEPS[idx]}"
         self.lbl_step.configure(text=title)
-        page = getattr(self, f"page_{idx}", None)
+        page = getattr(self, f"page_{idx}".replace("-", "_"), None)
         if page:
             page()
         else:
