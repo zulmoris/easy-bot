@@ -1,0 +1,9 @@
+key.json
+config.json
+settings.json
+easybot-config.json
+.venv/
+__pycache__/
+dist/
+build/
+errors.log
