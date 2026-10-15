@@ -6,7 +6,7 @@
 AppId={{22dc867b-55e4-43cb-8b7f-13f1b328db36}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\Easy Bot
+DefaultDirName={localappdata}\Programs\Easy Bot
 DefaultGroupName=Easy Bot
 UninstallDisplayIcon={app}\wizard.exe
 OutputDir=install_build
@@ -14,7 +14,7 @@ OutputBaseFilename=Easy-Bot-setup-v{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 
 [Files]
 Source: "setup_src\wizard.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -33,3 +33,4 @@ Name: "{autodesktop}\Easy Bot"; Filename: "{app}\dashboard.exe"
 Filename: "{app}\wizard.exe"; Description: "Запустить первичную настройку"; Flags: postinstall skipifsilent nowait
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{userappdata}\EasyBot"
