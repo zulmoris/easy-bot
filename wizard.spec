@@ -1,12 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
+datas = collect_data_files('customtkinter')
 
 a = Analysis(
     ['wizard_v40.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=['gspread', 'customtkinter', 'darkdetect'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

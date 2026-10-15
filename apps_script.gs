@@ -13,12 +13,26 @@ function getTestChatId() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var settings = ss.getSheetByName("Настройки");
-    if (!settings) return "438544636";
+    if (!settings) return "";
     var id = settings.getRange("B1").getValue();
-    return String(id || "438544636");
+    return String(id || "");
   } catch (e) {
-    return "438544636";
+    return "";
   }
+}
+
+
+// ==========================================
+// МЕНЮ ТАБЛИЦЫ (появляется при открытии)
+// ==========================================
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("🤖 Easy Bot")
+    .addItem("⚙️ Установить триггеры и бэкапы", "setupBackupSystem")
+    .addItem("🔄 Пересчитать бонусы дизайнеров", "recalcAllDetails")
+    .addItem("🦓 Применить зебру ко всей таблице", "applyZebraToAll")
+    .addItem("💾 Сделать бэкап прямо сейчас", "dailyBackup")
+    .addToUi();
 }
 
 // ==========================================
@@ -412,6 +426,19 @@ function buildInlineKeyboard(invoice) {
 // ОТПРАВКА В TELEGRAM
 // ==========================================
 function sendTelegram(chatId, text, keyboard) {
+  if (!chatId || !text) return null;
+  if (text.length > 4000) {
+    var chunks = text.match(/[\s\S]{1,4000}/g) || [text];
+    var res = null;
+    for (var i = 0; i < chunks.length; i++) {
+      res = _sendTelegramRaw(chatId, chunks[i], (i === chunks.length - 1) ? keyboard : null);
+    }
+    return res;
+  }
+  return _sendTelegramRaw(chatId, text, keyboard);
+}
+
+function _sendTelegramRaw(chatId, text, keyboard) {
   var url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage";
   var payload = {chat_id: chatId, text: text};
   if (keyboard) payload.reply_markup = keyboard;
@@ -427,7 +454,7 @@ function sendTelegram(chatId, text, keyboard) {
     var response = UrlFetchApp.fetch(url, options);
     var result = JSON.parse(response.getContentText());
     if (!result.ok) Logger.log("Telegram API ошибка: " + response.getContentText());
-        return (result && result.ok) ? result : null;
+    return result;
   } catch (error) {
     Logger.log("Ошибка отправки Telegram: " + error);
     return null;
@@ -447,6 +474,12 @@ function sendTelegram(chatId, text, keyboard) {
 function doGet(e) {
   try {
     var action = e.parameter.action;
+
+        if (action === "setup") {
+      setupBackupSystem();
+      return ContentService.createTextOutput(JSON.stringify({ok: true, message: "Triggers and backup system configured"}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (action === "notify") {
       // Простая отправка сообщения в указанный chat_id
@@ -1081,10 +1114,17 @@ function parseDate(val) {
   if (!val) return null;
   if (val instanceof Date) return val;
   var s = String(val).trim();
-  // ДД.ММ.ГГГГ или ДД-ММ-ГГГГ
-  var m = s.match(/^(\d{1,2})[.\-](\d{1,2})[.\-](\d{4})$/);
+  // YYYY-MM-DD
+  var mIso = s.match(/^(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})$/);
+  if (mIso) {
+    return new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]));
+  }
+  // DD.MM.YYYY или DD.MM.YY
+  var m = s.match(/^(\d{1,2})[.\-](\d{1,2})[.\-](\d{2,4})$/);
   if (m) {
-    return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    var year = Number(m[3]);
+    if (year < 100) year += 2000;
+    return new Date(year, Number(m[2]) - 1, Number(m[1]));
   }
   return null;
 }
@@ -1125,7 +1165,6 @@ function setupBackupSystem() {
     .timeBased()
     .everyDays(1)
     .atHour(23)
-    .nearMinute(23)
     .create();
 
   // Часовой снапшот данных
@@ -1401,7 +1440,14 @@ function listBackups() {
 // Проблема 302 (webhook↔GAS) исчезает в корне. Спама больше нет.
 // ==========================================
 function setupPolling() {
-  // Удаляем старые триггеры поллинга, чтобы не плодить дубли
+  // 1. Удаляем webhook Telegram (если был установлен), чтобы getUpdates не выдавал 409 Conflict
+  try {
+    UrlFetchApp.fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/deleteWebhook", { muteHttpExceptions: true });
+  } catch (e) {
+    Logger.log("Ошибка deleteWebhook: " + e);
+  }
+
+  // 2. Удаляем старые триггеры поллинга, чтобы не плодить дубли
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === "pollUpdates") {

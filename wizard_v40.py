@@ -20,6 +20,10 @@ ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("blue")
 
 # ============ СЕРВИСНЫЕ ФУНКЦИИ ============
+def is_valid_chat_id(cid: str) -> bool:
+    cid = (cid or "").strip()
+    return (cid.startswith("-") and cid[1:].isdigit()) or cid.isdigit()
+
 def http_get(url: str, timeout=25) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/4.0"})
     return urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8")
@@ -81,7 +85,12 @@ def check_gas(url: str) -> tuple:
     try:
         body = http_get(url)
         if "unknown action" in body:
-            return True, "✅ Веб-приложение живое"
+            # Активируем триггеры бэкапов и поллинга автоматически
+            try:
+                http_get(f"{url}?action=setup", timeout=15)
+            except Exception:
+                pass
+            return True, "✅ Веб-приложение живое, триггеры настроены!"
         return False, f"⚠️ Неожиданный ответ: {body[:100]}"
     except Exception as e:
         return False, f"❌ {e}"
@@ -92,7 +101,7 @@ def smoke_test(gas_url: str, chat_id: str) -> tuple:
                                     "text": f"✅ {APP_NAME} 4.0 установлен и работает!"})
         r = json.loads(http_get(f"{gas_url}?{q}"))
         return (bool(r.get("ok") and r.get("sent")),
-                "✅ Тестовое сообщение отправлено" if r.get("ok") else f"❌ {r}")
+                "✅ Тестовое сообщение отправлено" if (r.get("ok") and r.get("sent")) else f"❌ Ошибка отправки: {r}")
     except Exception as e:
         return False, f"❌ {e}"
 
@@ -223,31 +232,30 @@ class Wizard(ctk.CTk):
         self._toast("Скопировано")
 
     def _toast(self, msg: str):
-        ctk.CTkLabel(self.header, text=msg, text_color="#2e7d32").pack(side="right", padx=12)
-
-    # --- вспомогательное UI ---
-    def clip(self, text: str):
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        self._toast("Скопировано")
-
-    def _toast(self, msg: str):
-        ctk.CTkLabel(self.header, text=msg, text_color="#2e7d32").pack(side="right", padx=12)
+        if not hasattr(self, "_toast_label") or not self._toast_label.winfo_exists():
+            self._toast_label = ctk.CTkLabel(self.header, text=msg, text_color="#2e7d32")
+            self._toast_label.pack(side="right", padx=12)
+        else:
+            self._toast_label.configure(text=msg)
 
     def _paste_any_layout(self, event):
-        """Ctrl+V работает на любой раскладке (клиенты будут на русской)."""
+        """Ctrl+V корректно работает на русской и английской раскладках без удаления текста."""
         keysym = (event.keysym or "").lower()
-        if keysym not in ("v", "м"):      # 'м' — физическая клавиша V на русской раскладке
+        if keysym not in ("v", "м"):
             return
-        if event.state & 0x0004:          # зажат Control
+        if event.state & 0x0004:
             try:
                 text = self.clipboard_get()
             except Exception:
-                return
+                return "break"
             widget = self.focus_get()
-            if isinstance(widget, ctk.CTkEntry) or widget.__class__.__name__ == "Entry":
-                widget.delete(0, "end")
-                widget.insert(0, text)
+            if hasattr(widget, "insert"):
+                try:
+                    # Вставка по позиции курсора
+                    widget.insert("insert", text)
+                except Exception:
+                    widget.insert("end", text)
+            return "break"
 
     def result_label(self):
         lbl = ctk.CTkLabel(self.body, text="", justify="left")
@@ -634,7 +642,7 @@ class Wizard(ctk.CTk):
 
     def send_chat_test(self):
         chat_id = self.e_chat.get().strip()
-        if not chat_id.isdigit():
+        if not is_valid_chat_id(chat_id):
             self.lbl_res.configure(text="❌ Введите число — ID из ответа бота на /start",
                                    text_color="#c62828")
             return
@@ -645,7 +653,7 @@ class Wizard(ctk.CTk):
 
     def validate_6(self):
         chat_id = self.e_chat.get().strip()
-        if not chat_id.isdigit():
+        if not is_valid_chat_id(chat_id):
             messagebox.showwarning(APP_NAME, "Сначала отправьте тест и убедитесь, что сообщение пришло")
             return False
         # Автозапись B1 в лист «Настройки»
@@ -693,6 +701,11 @@ class Wizard(ctk.CTk):
 
     # ============ ШАГ 8: ГОТОВО ============
     def page_8(self):
+        # Автосохранение настроек при переходе на финальный экран
+        try:
+            save_settings(self.answers.get("sheet_url", ""), self.answers.get("pdf_folder", ""))
+        except Exception:
+            pass
         ctk.CTkLabel(self.body, text="🎉 Всё готово!",
                      font=("", 24, "bold")).pack(pady=(30, 8))
         ctk.CTkLabel(self.body, justify="left", text=(
@@ -710,11 +723,12 @@ class Wizard(ctk.CTk):
                       command=self.open_manager_doc).pack(side="left")
 
     def open_manager_doc(self):
-        doc = APP_DIR / "ИНСТРУКЦИЯ-МЕНЕДЖЕРУ.md"
-        if doc.exists():
-            os.startfile(str(doc))
-        else:
-            messagebox.showinfo(APP_NAME, "Файл инструкции положите рядом с программой:\n" + str(doc))
+        for name in ("ИНСТРУКЦИЯ-МЕНЕДЖЕРУ.txt", "ИНСТРУКЦИЯ-МЕНЕДЖЕРУ.md"):
+            doc = APP_DIR / name
+            if doc.exists():
+                os.startfile(str(doc))
+                return
+        messagebox.showinfo(APP_NAME, f"Файл инструкции положите рядом с программой:\n{APP_DIR / 'ИНСТРУКЦИЯ-МЕНЕДЖЕРУ.txt'}")
 
     def validate_8(self):
         # Финализация: сохраняем все локальные настройки
