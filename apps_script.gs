@@ -490,7 +490,11 @@ function doGet(e) {
           .setMimeType(ContentService.MimeType.JSON);
       }
       var result = sendTelegram(chatId, text);
-      return ContentService.createTextOutput(JSON.stringify({ok: true, sent: !!result}))
+      var sentOk = !!(result && result.ok);
+      return ContentService.createTextOutput(JSON.stringify(
+        sentOk ? {ok: true, sent: true}
+               : {ok: true, sent: false, error: (result && result.description) || "send failed"}
+      ))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -530,7 +534,7 @@ function doGet(e) {
                 "📊 Ваш бонус (" + percent + "%): " + bonus + " ₽\n" +
                 "⏰ Выплата в течение 7 дней";
       var result = sendTelegram(chatId, msg);
-      return ContentService.createTextOutput(JSON.stringify({ok: true, sent: !!result}))
+      return ContentService.createTextOutput(JSON.stringify({ok: true, sent: !!(result && result.ok)}))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -605,11 +609,13 @@ function doGet(e) {
       var groups = getRecipientGroups(manager, designer, invoice);
       var sent = 0;
       for (var g = 0; g < groups.full.length; g++) {
-        if (sendTelegram(groups.full[g], messageFull)) sent++;
+        var rFull = sendTelegram(groups.full[g], messageFull);
+        if (rFull && rFull.ok) sent++;
       }
       var keyboard2 = buildInlineKeyboard(invoice);
       for (var g2 = 0; g2 < groups.brief.length; g2++) {
-        if (sendTelegram(groups.brief[g2], messageBrief2, keyboard2)) sent++;
+        var rBrief = sendTelegram(groups.brief[g2], messageBrief2, keyboard2);
+        if (rBrief && rBrief.ok) sent++;
       }
 
       return ContentService.createTextOutput(JSON.stringify({ok: true, sent: sent}))
